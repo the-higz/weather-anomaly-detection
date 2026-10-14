@@ -1,6 +1,7 @@
 from sklearn.neighbors import LocalOutlierFactor, NearestNeighbors
 import numpy as np
 import matplotlib.pyplot as plt
+import pandas as pd
 
 nomes_variaveis = [
     "Precipitação",
@@ -211,6 +212,35 @@ def analisar_vizinhos(dados, dados_normalizados, k, mes, indices, dados_originai
         print("Média vizinhos: ", media_vizinhos)
         print("Diferença vizinhos: ", diferenca_vizinhos)
 
+
+def exportar_excel(resultados_lof, dados_por_mes):
+    linhas_excel = []
+
+    for mes in sorted(resultados_lof, key=int):
+        resultado = resultados_lof[mes]
+        scores = resultado["scores"]
+        indices = np.argsort(scores)[-10:][::-1]
+
+        for indice in indices:
+            tupla = dados_por_mes[mes][indice]
+
+            linha = {
+                "Mês": mes,
+                "Data": tupla[0],
+                "Score LOF": scores[indice]
+            }
+
+            for i,nome in enumerate(nomes_variaveis):
+                linha[nome] = float(tupla[i + 1])
+
+            linhas_excel.append(linha)
+
+    tabela = pd.DataFrame(linhas_excel)
+    tabela.to_excel("resultados_anomalias.xlsx", index=False)
+
+    print("\nResultados exportados para resultados_anomalias.xlsx")
+
+
 def main():
     linhas = carregar_dados()
 
@@ -246,6 +276,9 @@ def main():
             dados_originais,
             scores
         )
+
+    # da para usar Invoke-Item resultados_anomalias.xlsx para abrir o excel direto pelo terminal
+    exportar_excel(resultados_lof, dados_por_mes)
 
 if __name__ == "__main__":
     main()
