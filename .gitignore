@@ -1,0 +1,16 @@
+# Dados de entrada
+*.csv
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# IDE
+.vscode/
+
+# Resultados gerados
+*.xlsx
+*.png
+*.jpg
