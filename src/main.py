@@ -15,159 +15,170 @@ nomes_variaveis = [
     "Velocidade média do vento"
 ]
 
-with open('dados.csv', encoding='utf-8') as arquivo:
+def carregar_dados():
+    with open('dados.csv', encoding='utf-8') as arquivo:
+        for linha in arquivo:
+            if linha.startswith('Data Medicao'):
+                break
 
-    for linha in arquivo:
-        if linha.startswith('Data Medicao'):
-            break
+        return arquivo.readlines()
 
+def agrupar_por_mes(arquivo):
     dados_por_mes = {}
-
     for linha in arquivo:
-        if not linha.strip():
-            continue
-
-        valores = linha.strip().rstrip(';').split(';')
-
-        if 'null' not in valores:
-            tupla = tuple(valores)
-            data = tupla[0]
-            partes = data.split('-')
-            mes = partes[1]
-
-            if mes not in dados_por_mes:
-                dados_por_mes[mes] = []
-
-            dados_por_mes[mes].append(tupla)
-
-dados_normalizados = {}
-
-for mes, tuplas in dados_por_mes.items():
-
-    dados = np.array([
-        [float(valor) for valor in tupla[1:]]
-        for tupla in tuplas
-    ])
-
-    media = np.mean(dados, axis=0)
-    desvio = np.std(dados, axis=0)
-
-    normalizado = (dados - media) / desvio
-
-    dados_normalizados[mes] = normalizado
-
-resultados_lof = {}
-
-k = 20
-
-for mes, dados in dados_normalizados.items():
-
-    lof = LocalOutlierFactor(n_neighbors=k)
-
-    labels = lof.fit_predict(dados)
-    scores = -lof.negative_outlier_factor_
-
-    resultados_lof[mes] = {
-        "labels": labels,
-        "scores": scores
-    }
-
-for mes in sorted(resultados_lof, key=int):
-    resultado = resultados_lof[mes]
-
-    scores = resultado["scores"]
-
-    indices = np.argsort(scores)[-10:][::-1]
-
-    dados_originais = dados_por_mes[mes]
-
-    dados = np.array([
-        [float(valor) for valor in tupla[1:]]
-        for tupla in dados_originais
-    ])
-
-    fig, eixos = plt.subplots(
-        10,
-        10,
-        figsize=(22, 22)
-    )
-
-    for i in range(10):
-        for j in range(10):
-
-            ax = eixos[i, j]
-
-            if i == j:
-                ax.text(
-                    0.5,
-                    0.5,
-                    nomes_variaveis[i],
-                    ha="center",
-                    va="center",
-                    fontsize=9,
-                    fontweight="bold"
-                )
-
-                ax.set_xticks([])
-                ax.set_yticks([])
+            if not linha.strip():
                 continue
 
-            if i < j:
-                ax.axis("off")
-                continue
+            valores = linha.strip().rstrip(';').split(';')
 
-            ax.scatter(
-                dados[:, j],
-                dados[:, i],
-                s=5
-            )
+            if 'null' not in valores:
+                tupla = tuple(valores)
+                data = tupla[0]
+                partes = data.split('-')
+                mes = partes[1]
 
-            ax.scatter(
-                dados[indices, j],
-                dados[indices, i],
-                s=25
-            )
+                if mes not in dados_por_mes:
+                    dados_por_mes[mes] = []
 
-            if i == 9:
-                ax.set_xlabel(
-                    nomes_variaveis[j],
-                    fontsize=8
+                dados_por_mes[mes].append(tupla)
+
+    return dados_por_mes
+
+def normalizar_dados(dados_por_mes):
+    dados_normalizados = {}
+    for mes, tuplas in dados_por_mes.items():
+
+        dados = np.array([
+            [float(valor) for valor in tupla[1:]]
+            for tupla in tuplas
+        ])
+
+        media = np.mean(dados, axis=0)
+        desvio = np.std(dados, axis=0)
+
+        desvio[desvio == 0] = 1
+        normalizado = (dados - media)/desvio
+
+        dados_normalizados[mes] = normalizado
+
+    return dados_normalizados
+
+def calcular_lof(dados_normalizados):
+    resultados_lof = {}
+
+    k = 20
+
+    for mes, dados in dados_normalizados.items():
+
+        lof = LocalOutlierFactor(n_neighbors=k)
+
+        labels = lof.fit_predict(dados)
+        scores = -lof.negative_outlier_factor_
+
+        resultados_lof[mes] = {
+            "labels": labels,
+            "scores": scores
+        }
+
+    return resultados_lof
+    
+def gerar_graficos(resultados_lof, dados_por_mes):
+    for mes in sorted(resultados_lof, key=int):
+        resultado = resultados_lof[mes]
+
+        scores = resultado["scores"]
+
+        indices = np.argsort(scores)[-10:][::-1]
+
+        dados_originais = dados_por_mes[mes]
+
+        dados = np.array([
+            [float(valor) for valor in tupla[1:]]
+            for tupla in dados_originais
+        ])
+
+        fig, eixos = plt.subplots(
+            10,
+            10,
+            figsize=(22, 22)
+        )
+
+        for i in range(10):
+            for j in range(10):
+
+                ax = eixos[i, j]
+
+                if i == j:
+                    ax.text(
+                        0.5,
+                        0.5,
+                        nomes_variaveis[i],
+                        ha="center",
+                        va="center",
+                        fontsize=9,
+                        fontweight="bold"
+                    )
+
+                    ax.set_xticks([])
+                    ax.set_yticks([])
+                    continue
+
+                if i < j:
+                    ax.axis("off")
+                    continue
+
+                ax.scatter(
+                    dados[:, j],
+                    dados[:, i],
+                    s=5
                 )
 
-            else:
-                ax.set_xticklabels([])
-
-            if j == 0:
-                ax.set_ylabel(
-                    nomes_variaveis[i],
-                    fontsize=8
+                ax.scatter(
+                    dados[indices, j],
+                    dados[indices, i],
+                    s=25
                 )
 
-            else:
-                ax.set_yticklabels([])
+                if i == 9:
+                    ax.set_xlabel(
+                        nomes_variaveis[j],
+                        fontsize=8
+                    )
 
-            ax.tick_params(
-                axis="both",
-                labelsize=6
-            )
+                else:
+                    ax.set_xticklabels([])
 
-    fig.suptitle(
-        f"Matriz de dispersão — Mês {mes} — Top 10 LOF",
-        fontsize=18,
-        fontweight="bold"
-    )
+                if j == 0:
+                    ax.set_ylabel(
+                        nomes_variaveis[i],
+                        fontsize=8
+                    )
 
-    plt.tight_layout(rect=(0, 0, 1, 0.97))
+                else:
+                    ax.set_yticklabels([])
 
-    plt.show()
+                ax.tick_params(
+                    axis="both",
+                    labelsize=6
+                )
 
+        fig.suptitle(
+            f"Matriz de dispersão — Mês {mes} — Top 10 LOF",
+            fontsize=18,
+            fontweight="bold"
+        )
+
+        plt.tight_layout(rect=(0, 0, 1, 0.97))
+        plt.show()
+        plt.close()
+
+def analisar_vizinhos(dados, dados_normalizados, k, mes, indices, dados_originais, scores):
     media = np.mean(dados, axis=0)
 
     vizinhos = NearestNeighbors(n_neighbors=k + 1)
+    vizinhos.fit(dados_normalizados)
 
-    vizinhos.fit(dados)
-
-    distancias, indices_vizinhos = vizinhos.kneighbors(dados)
+    distancias, indices_vizinhos = vizinhos.kneighbors(dados_normalizados)
 
     print(f"\nMÊS: {mes}")
     print("-" * 80)
@@ -199,3 +210,42 @@ for mes in sorted(resultados_lof, key=int):
         print("Diferença: ", diferenca)
         print("Média vizinhos: ", media_vizinhos)
         print("Diferença vizinhos: ", diferenca_vizinhos)
+
+def main():
+    linhas = carregar_dados()
+
+    dados_por_mes = agrupar_por_mes(linhas)
+
+    dados_normalizados = normalizar_dados(dados_por_mes)
+
+    resultados_lof = calcular_lof(dados_normalizados)
+
+    # gerar_graficos(resultados_lof, dados_por_mes)
+
+    k = 20
+
+    for mes in sorted(resultados_lof, key=int):
+        resultado = resultados_lof[mes]
+
+        scores = resultado["scores"]
+        indices = np.argsort(scores)[-10:][::-1]
+
+        dados_originais = dados_por_mes[mes]
+
+        dados = np.array([
+            [float(valor) for valor in tupla[1:]]
+            for tupla in dados_originais
+        ])
+
+        analisar_vizinhos(
+            dados,
+            dados_normalizados[mes],
+            k,
+            mes,
+            indices,
+            dados_originais,
+            scores
+        )
+
+if __name__ == "__main__":
+    main()
