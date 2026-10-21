@@ -240,6 +240,31 @@ def exportar_excel(resultados_lof, dados_por_mes):
 
     print("\nResultados exportados para resultados_anomalias.xlsx")
 
+def exportar_dados_dashboard(dados_por_mes, resultados_lof):
+    linhas = []
+
+    for mes in sorted(dados_por_mes, key=int):
+        observacoes = dados_por_mes[mes]
+        scores = resultados_lof[mes]["scores"]
+        labels = resultados_lof[mes]["labels"]
+
+        for i, tupla in enumerate(observacoes):
+            linha = {
+                "Mês": mes,
+                "Data": tupla[0],
+                "Score LOF": scores[i],
+                "Anomalia": labels[i] == -1
+            }
+
+            for j, nome in enumerate(nomes_variaveis):
+                linha[nome] = float(tupla[j + 1])
+
+            linhas.append(linha)
+
+    tabela = pd.DataFrame(linhas)
+    tabela.to_excel("dados_dashboard.xlsx", index=False)
+
+    print("Dados completos exportados para dados_dashboard.xlsx")
 
 def main():
     linhas = carregar_dados()
@@ -279,6 +304,7 @@ def main():
 
     # da para usar Invoke-Item resultados_anomalias.xlsx para abrir o excel direto pelo terminal
     exportar_excel(resultados_lof, dados_por_mes)
+    exportar_dados_dashboard(dados_por_mes, resultados_lof)
 
 if __name__ == "__main__":
     main()
