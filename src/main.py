@@ -89,7 +89,8 @@ def gerar_graficos(resultados_lof, dados_por_mes):
 
         scores = resultado["scores"]
 
-        indices = np.argsort(scores)[-10:][::-1]
+        indices = np.where(resultado["labels"] == -1)[0]
+        indices = indices[np.argsort(scores[indices])[::-1]]
 
         dados_originais = dados_por_mes[mes]
 
@@ -219,7 +220,8 @@ def exportar_excel(resultados_lof, dados_por_mes):
     for mes in sorted(resultados_lof, key=int):
         resultado = resultados_lof[mes]
         scores = resultado["scores"]
-        indices = np.argsort(scores)[-10:][::-1]
+        indices = np.where(resultado["labels"] == -1)[0]
+        indices = indices[np.argsort(scores[indices])[::-1]]
 
         for indice in indices:
             tupla = dados_por_mes[mes][indice]
@@ -283,7 +285,8 @@ def main():
         resultado = resultados_lof[mes]
 
         scores = resultado["scores"]
-        indices = np.argsort(scores)[-10:][::-1]
+        indices = np.where(resultado["labels"] == -1)[0]
+        indices = indices[np.argsort(scores[indices])[::-1]]
 
         dados_originais = dados_por_mes[mes]
 
