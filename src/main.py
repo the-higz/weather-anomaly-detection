@@ -268,6 +268,87 @@ def exportar_dados_dashboard(dados_por_mes, resultados_lof):
 
     print("Dados completos exportados para dados_dashboard.xlsx")
 
+
+def exportar_resumo_temporal(dados_por_mes, resultados_lof):
+
+    linhas_resumo = []
+
+    for mes in sorted(dados_por_mes, key=int):
+
+        observacoes = dados_por_mes[mes]
+        resultado = resultados_lof[mes]
+
+        labels = resultado["labels"]
+        scores = resultado["scores"]
+
+        # Agrupa as observações pelo ano original.
+        anos = {}
+
+        for i, tupla in enumerate(observacoes):
+
+            data = tupla[0]
+            ano = int(data.split("-")[0])
+
+            if ano not in anos:
+                anos[ano] = {
+                    "observacoes": 0,
+                    "anomalias": 0,
+                    "scores_anomalos": []
+                }
+
+            anos[ano]["observacoes"] += 1
+
+            if labels[i] == -1:
+                anos[ano]["anomalias"] += 1
+                anos[ano]["scores_anomalos"].append(float(scores[i]))
+
+        # Gera uma linha de resumo para cada ano e mês.
+        for ano in sorted(anos):
+
+            resumo = anos[ano]
+
+            total = resumo["observacoes"]
+            quantidade_anomalias = resumo["anomalias"]
+            scores_anomalos = resumo["scores_anomalos"]
+
+            percentual = (
+                quantidade_anomalias / total * 100
+                if total > 0 else 0
+            )
+
+            linha = {
+                "Ano": ano,
+                "Mês": int(mes),
+                "Período": f"{ano}-{mes}",
+                "Observações analisadas": total,
+                "Anomalias": quantidade_anomalias,
+                "Percentual de anomalias (%)": percentual,
+                "Média dos scores anômalos": (
+                    np.mean(scores_anomalos)
+                    if scores_anomalos else np.nan
+                ),
+                "Mediana dos scores anômalos": (
+                    np.median(scores_anomalos)
+                    if scores_anomalos else np.nan
+                ),
+                "Maior score anômalo": (
+                    max(scores_anomalos)
+                    if scores_anomalos else np.nan
+                )
+            }
+
+            linhas_resumo.append(linha)
+
+    tabela = pd.DataFrame(linhas_resumo)
+
+    if not tabela.empty:
+        tabela = tabela.sort_values(["Ano", "Mês"])
+
+    tabela.to_excel("resumo_temporal.xlsx", index=False)
+
+    print("Resumo temporal exportado para resumo_temporal.xlsx\n")
+
+
 def main():
     linhas = carregar_dados()
 
@@ -308,6 +389,7 @@ def main():
     # da para usar Invoke-Item resultados_anomalias.xlsx para abrir o excel direto pelo terminal
     exportar_excel(resultados_lof, dados_por_mes)
     exportar_dados_dashboard(dados_por_mes, resultados_lof)
+    exportar_resumo_temporal(dados_por_mes, resultados_lof)
 
 if __name__ == "__main__":
     main()
