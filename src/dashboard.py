@@ -29,6 +29,11 @@ def carregar_dados_completos():
     return pd.read_excel("dados_dashboard.xlsx")
 
 
+@st.cache_data
+def carregar_resumo_temporal():
+    return pd.read_excel("resumo_temporal.xlsx")
+
+
 def comparar_com_vizinhos(dados_mes, data_anomalia, variaveis, k=20):
 
     """Compara uma observação com os vizinhos no espaço normalizado."""
@@ -80,23 +85,96 @@ st.set_page_config(page_title="Análise de Anomalias Meteorológicas", page_icon
 
 st.markdown("""
     <style>
-    .stApp {background-color:#0B1F33;color:#FFFFFF;}
-    [data-testid="stMetric"] {background-color:#153A5B;padding:18px;border-radius:12px;border:1px solid #285477;}
-    h1,h2,h3 {color:#FFFFFF;} p,label {color:#D4DDE5;}
-    div[data-baseweb="select"] > div {background-color:#153A5B;}
+    .stApp {
+        background-color:#0B1F33;
+        color:#FFFFFF;
+        font-family: "Segoe UI", "Inter", "Roboto", sans-serif;
+    }
+    html, body, [class*="css"] {
+        font-family: "Segoe UI", "Inter", "Roboto", sans-serif;
+    }
+    h1, h2, h3 {
+        color:#F4F8FC;
+        letter-spacing:-0.025em;
+        font-weight:650;
+    }
+    h1 {
+        font-size:2.15rem;
+        line-height:1.15;
+    }
+    h2 {font-size:1.55rem;}
+    h3 {font-size:1.15rem;}
+    p, label, [data-testid="stCaption"] {
+        color:#D4DDE5;
+        line-height:1.5;
+    }
+    [data-testid="stMetric"] {
+        background-color:#153A5B;
+        padding:10px 12px;
+        border-radius:12px;
+        border:1px solid #285477;
+    }
+    [data-testid="stMetricLabel"] {
+        color:#C8D8E8;
+        font-size:0.88rem;
+        font-weight:500;
+    }
+    [data-testid="stMetricValue"] {
+        color:#FFFFFF;
+        font-size:1.8rem;
+        font-weight:650;
+        letter-spacing:-0.025em;
+    }
+    div[data-baseweb="select"] > div {
+        background-color:#153A5B;
+        border-radius:9px;
+    }
+    div[data-baseweb="select"] * {font-family:inherit;}
     hr {border-color:#285477;}
-    </style>
+    
+/* Refinamento visual dos cartões de indicadores */
+div[data-testid="stMetric"] {
+    background: linear-gradient(145deg, #183f60 0%, #153653 100%);
+    border: 1px solid rgba(77, 163, 255, 0.30);
+    border-radius: 12px;
+    padding: 14px 16px;
+    min-height: 88px;
+}
+div[data-testid="stMetric"] label {
+    font-size: 0.82rem;
+    opacity: 0.92;
+}
+div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+}
+@media (max-width: 900px) {
+    div[data-testid="stMetric"] {
+        padding: 10px 12px;
+    }
+}
+
+</style>
     """, unsafe_allow_html=True)
 
-st.caption("INICIAÇÃO CIENTÍFICA · ANÁLISE METEOROLÓGICA")
-st.title("🌦️ Monitoramento de Anomalias Meteorológicas")
-st.markdown("Investigação de padrões incomuns em observações meteorológicas da estação de Catalão, Goiás.\n\n**Método de detecção:** Local Outlier Factor (LOF)")
+cabecalho, metodo = st.columns([3, 1])
+
+with cabecalho:
+    st.caption("INICIAÇÃO CIENTÍFICA · ANÁLISE METEOROLÓGICA")
+    st.title("🌦️ Monitoramento de Anomalias (Método LOF)")
+    st.markdown("Estação meteorológica de Catalão, Goiás")
+
+with metodo:
+    st.markdown(" ")
+    st.markdown(" ")
+
 st.divider()
 
 
 try:
     dados = carregar_resultados()
     dados_completos = carregar_dados_completos()
+    resumo_temporal = carregar_resumo_temporal()
 
 except FileNotFoundError as erro:
     st.error("Não encontrei uma das planilhas necessárias. Execute `python src/main.py` para gerar os arquivos Excel.")
@@ -116,6 +194,21 @@ if not {"Mês", "Data", "Score LOF", "Anomalia"}.issubset(dados_completos.column
     st.error("A planilha dados_dashboard.xlsx não contém todas as colunas necessárias.")
     st.stop()
 
+# Verificação do resumo temporal
+colunas_temporais = {
+    "Ano",
+    "Mês",
+    "Observações analisadas",
+    "Anomalias",
+    "Percentual de anomalias (%)"
+}
+
+if not colunas_temporais.issubset(resumo_temporal.columns):
+    st.error(
+        "A planilha resumo_temporal.xlsx não contém "
+        "todas as colunas necessárias."
+    )
+    st.stop()
 
 variaveis_disponiveis = [v for v in VARIAVEIS if v in dados_completos.columns]
 
@@ -125,133 +218,300 @@ if len(variaveis_disponiveis) < 2:
     st.stop()
 
 
-st.subheader("Visão geral da análise")
-meses_disponiveis = dados_completos["Mês"].dropna().unique().tolist()
+col_visao_geral = st.container()
+
+with col_visao_geral:
+    st.subheader("Visão geral")
+
+    # Seleção em cascata: primeiro o ano, depois o mês daquele ano.
+    dados_completos["Data"] = pd.to_datetime(dados_completos["Data"], errors="coerce")
+    dados_completos["Ano"] = dados_completos["Data"].dt.year
+    dados_completos["Mes_num"] = pd.to_numeric(dados_completos["Mês"], errors="coerce").astype("Int64")
+
+    # Disponibiliza apenas anos com pelo menos uma anomalia identificada.
+    dados_anomalias_data = dados.copy()
+    dados_anomalias_data["Data_dt"] = pd.to_datetime(
+        dados_anomalias_data["Data"], errors="coerce"
+    )
+    anos_com_anomalias = sorted(
+        dados_anomalias_data.loc[
+            dados_anomalias_data["Data_dt"].notna(), "Data_dt"
+        ].dt.year.unique().astype(int).tolist()
+    )
+    anos_disponiveis = ["Todos os anos"] + [
+        ano for ano in anos_com_anomalias
+        if (dados_anomalias_data["Data_dt"].dt.year == ano).any()
+    ]
+    nomes_meses = {
+        1: "Janeiro",
+        2: "Fevereiro",
+        3: "Março",
+        4: "Abril",
+        5: "Maio",
+        6: "Junho",
+        7: "Julho",
+        8: "Agosto",
+        9: "Setembro",
+        10: "Outubro",
+        11: "Novembro",
+        12: "Dezembro"
+    }
+
+    if not anos_disponiveis:
+        st.warning("Não há anos disponíveis para análise.")
+        st.stop()
+
+    col_ano, col_mes = st.columns([1, 1])
+
+    with col_ano:
+        ano_selecionado = st.selectbox(
+            "Ano",
+            options=anos_disponiveis,
+            index=0
+        )
+
+    # Dentro do recorte escolhido, oferece apenas meses com anomalias.
+    if ano_selecionado == "Todos os anos":
+        meses_com_anomalias = (
+            dados_anomalias_data.loc[
+                dados_anomalias_data["Data_dt"].notna(), "Data_dt"
+            ].dt.month.unique().astype(int).tolist()
+        )
+    else:
+        meses_com_anomalias = dados_anomalias_data.loc[
+            (dados_anomalias_data["Data_dt"].dt.year == ano_selecionado)
+            & dados_anomalias_data["Data_dt"].notna(),
+            "Data_dt"
+        ].dt.month.unique().astype(int).tolist()
+
+    meses_disponiveis = ["Todos os meses"] + sorted(meses_com_anomalias)
+
+    with col_mes:
+        mes_selecionado = st.selectbox(
+            "Mês",
+            options=meses_disponiveis,
+            index=0,
+            format_func=lambda mes: (
+                mes if isinstance(mes, str) else nomes_meses.get(int(mes), str(mes))
+            )
+        )
+
+    if mes_selecionado is None:
+        st.warning("Não há meses disponíveis para o ano selecionado.")
+        st.stop()
+
+    dados_mes = dados_completos.copy()
+
+    if ano_selecionado != "Todos os anos":
+        dados_mes = dados_mes[dados_mes["Ano"] == ano_selecionado]
+
+    if mes_selecionado != "Todos os meses":
+        dados_mes = dados_mes[dados_mes["Mes_num"] == int(mes_selecionado)]
+
+    mes_texto = (
+        "Todos os meses"
+        if mes_selecionado == "Todos os meses"
+        else f"{int(mes_selecionado):02d}"
+    )
 
 
-if not meses_disponiveis:
-    st.warning("Não há meses disponíveis para análise.")
-    st.stop()
+    total_observacoes = len(dados_mes)
+    total_anomalias = int(dados_mes["Anomalia"].fillna(False).astype(bool).sum())
+    percentual = total_anomalias / total_observacoes * 100 if total_observacoes else 0
+    c1, c3 = st.columns(2, gap="small")
 
 
-meses = sorted(meses_disponiveis, key=int)
-mes_selecionado = st.selectbox("Selecione o mês para investigar", options=meses, format_func=lambda mes: f"Mês {int(mes):02d}")
+    c1.metric("Observações analisadas", f"{total_observacoes:,}".replace(",", "."))
+    c3.metric("Proporção de anomalias", f"{percentual:.2f}%")
 
+# Filtra a lista de anomalias conforme os filtros de ano e mês da visão geral.
+dados_filtrados = dados.copy()
+dados_filtrados["Data_dt"] = pd.to_datetime(dados_filtrados["Data"], errors="coerce")
 
-if mes_selecionado is None:
-    st.warning("Selecione um mês válido.")
-    st.stop()
+if ano_selecionado != "Todos os anos":
+    dados_filtrados = dados_filtrados[
+        dados_filtrados["Data_dt"].dt.year == ano_selecionado
+    ]
 
+if mes_selecionado != "Todos os meses":
+    dados_filtrados = dados_filtrados[
+        dados_filtrados["Data_dt"].dt.month == int(mes_selecionado)
+    ]
 
-mes_texto = f"{int(mes_selecionado):02d}"
-dados_mes = dados_completos[dados_completos["Mês"].astype(str).str.zfill(2) == mes_texto].copy()
-
-
-total_observacoes = len(dados_mes)
-total_anomalias = int(dados_mes["Anomalia"].fillna(False).astype(bool).sum())
-percentual = total_anomalias / total_observacoes * 100 if total_observacoes else 0
-c1, c2, c3, c4 = st.columns(4)
-
-
-c1.metric("Observações analisadas", f"{total_observacoes:,}".replace(",", "."))
-c2.metric("Anomalias identificadas", f"{total_anomalias:,}".replace(",", "."))
-c3.metric("Proporção de anomalias", f"{percentual:.2f}%")
-c4.metric("Mês selecionado", mes_texto)
-st.caption("Os indicadores representam os registros disponíveis no mês selecionado.")
 st.divider()
 st.subheader("Anomalias identificadas")
+st.caption(
+    "Explore os outliers encontrados. Selecione uma linha da tabela para abrir "
+    "a análise detalhada da observação."
+)
 
+colunas_tabela = ["Data", "Mês", "Score LOF"]
+tabela_outliers = dados_filtrados[colunas_tabela].copy()
+tabela_outliers["Data"] = tabela_outliers["Data"].astype(str)
+tabela_outliers = tabela_outliers.sort_values("Score LOF", ascending=False).reset_index(drop=True)
+config_tabela_outliers = {
+    "Data": st.column_config.TextColumn("Data", width="small"),
+    "Mês": st.column_config.NumberColumn("Mês", width="small", format="%d"),
+    "Score LOF": st.column_config.NumberColumn("Score LOF", width="small", format="%.4f"),
+}
 
-dados_filtrados = dados[dados["Mês"].astype(str).str.zfill(2) == mes_texto].copy()
-dados_filtrados = dados_filtrados.sort_values("Score LOF", ascending=False).reset_index(drop=True)
+# Centraliza a tabela em uma área mais estreita para evitar que ela ocupe a página inteira.
+espaco_esquerda, area_tabela, espaco_direita = st.columns([1, 2.4, 1])
+with area_tabela:
+    selecao_tabela = st.dataframe(
+        tabela_outliers,
+        column_config=config_tabela_outliers,
+        hide_index=True,
+        width="stretch",
+        on_select="rerun",
+        selection_mode="single-row",
+        key="tabela_outliers"
+    )
 
+linhas_selecionadas = selecao_tabela.selection.rows
+if linhas_selecionadas:
+    indice_selecionado = linhas_selecionadas[0]
+    anomalia_selecionada = str(tabela_outliers.iloc[indice_selecionado]["Data"])
+    dados_anomalia = dados_filtrados[
+        dados_filtrados["Data"].astype(str) == anomalia_selecionada
+    ]
 
-if dados_filtrados.empty:
-    st.info("Não há anomalias listadas para este mês.")
-    st.stop()
+    if not dados_anomalia.empty:
+        anomalia = dados_anomalia.iloc[0]
+        st.divider()
+        st.subheader(f"Análise da anomalia · {anomalia_selecionada}")
 
+        metrica_data, metrica_score = st.columns(2, gap="small")
+        with metrica_data:
+            st.metric("Data selecionada", anomalia_selecionada)
+        with metrica_score:
+            st.metric("Score LOF", f'{anomalia["Score LOF"]:.3f}')
 
-anomalias = dados_filtrados["Data"].astype(str).tolist()
-anomalia_selecionada = st.selectbox("Selecione uma anomalia", options=anomalias)
-dados_anomalia = dados_filtrados[dados_filtrados["Data"].astype(str) == str(anomalia_selecionada)]
+        dados_comparacao = dados_mes
+        if mes_selecionado == "Todos os meses":
+            mes_anomalia = int(anomalia["Mês"])
+            dados_comparacao = dados_mes[dados_mes["Mes_num"] == mes_anomalia]
 
+        comparacao = comparar_com_vizinhos(
+            dados_comparacao, anomalia_selecionada, variaveis_disponiveis, k=20
+        )
 
-st.subheader("Anomalia selecionada")
+        if comparacao is None:
+            st.warning(
+                "Não foi possível calcular a comparação. Verifique se a observação "
+                "tem valores válidos nas variáveis meteorológicas."
+            )
+        else:
+            tabela = comparacao.copy()
+            numericas = [
+                "Valor observado", "Média dos vizinhos",
+                "Diferença", "Diferença padronizada"
+            ]
+            tabela[numericas] = tabela[numericas].round(2)
+            tabela["Magnitude do desvio"] = tabela["Diferença padronizada"].abs()
+            tabela = tabela.sort_values("Magnitude do desvio", ascending=False)
 
+            st.markdown("#### Tabela detalhada dos desvios")
+            st.dataframe(
+                tabela.drop(columns=["Magnitude do desvio"]),
+                hide_index=True,
+                width="stretch",
+                height=430
+            )
 
-if not dados_anomalia.empty:
-    anomalia = dados_anomalia.iloc[0]
+            st.caption(
+                "Diferenças positivas indicam valores acima da média dos vizinhos; "
+                "diferenças negativas indicam valores abaixo. "
+                "A diferença padronizada é descritiva e não confirma, isoladamente, "
+                "um evento meteorológico extremo."
+            )
 
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Data", str(anomalia["Data"]))
-    c2.metric("Score LOF", f'{anomalia["Score LOF"]:.3f}')
-    c3.metric("Mês", f'{int(anomalia["Mês"]):02d}')
+        st.divider()
+        st.markdown("#### Relação entre variáveis meteorológicas")
+        amostra_grafico = anomalia_selecionada
+        cx, cy = st.columns(2, gap="small")
+        with cx:
+            indice_x = (
+                variaveis_disponiveis.index("Temperatura máxima")
+                if "Temperatura máxima" in variaveis_disponiveis else 0
+            )
+            variavel_x = st.selectbox(
+                "Variável do eixo X",
+                options=variaveis_disponiveis,
+                index=indice_x,
+                key="detalhe_variavel_x"
+            )
 
-    with st.expander("Ver todas as variáveis da observação"):
-        st.dataframe(dados_anomalia, width="stretch", hide_index=True)
+        opcoes_y = [v for v in variaveis_disponiveis if v != variavel_x]
+        with cy:
+            variavel_y = st.selectbox(
+                "Variável do eixo Y",
+                options=opcoes_y,
+                index=min(5, len(opcoes_y) - 1),
+                key="detalhe_variavel_y"
+            )
 
-    st.divider()
-    st.subheader("🔬 Análise comparativa da anomalia")
-    st.markdown("Compare os valores observados com a média das observações mais próximas no espaço das variáveis meteorológicas normalizadas.")
+        dados_grafico = dados_mes.dropna(subset=[variavel_x, variavel_y]).copy()
+        if dados_grafico.empty:
+            st.warning("Não há registros suficientes para comparar essas variáveis.")
+        else:
+            # Outliers do LOF ficam vermelhos; a anomalia selecionada ganha uma cor própria.
+            dados_grafico["Data_texto"] = dados_grafico["Data"].astype(str)
+            dados_grafico["Grupo_visual"] = dados_grafico["Anomalia"].map({
+                False: "Observação normal",
+                True: "Outlier LOF"
+            })
+            dados_grafico.loc[
+                dados_grafico["Data_texto"] == anomalia_selecionada,
+                "Grupo_visual"
+            ] = "Anomalia em investigação"
 
-    comparacao = comparar_com_vizinhos(dados_mes, anomalia_selecionada, variaveis_disponiveis, k=20)
+            fig = px.scatter(
+                dados_grafico,
+                x=variavel_x,
+                y=variavel_y,
+                hover_data=["Data", "Score LOF"],
+                color="Grupo_visual",
+                color_discrete_map={
+                    "Observação normal": "#78BDE8",
+                    "Outlier LOF": "#FF4D4D",
+                    "Anomalia em investigação": "#E879FF"
+                },
+                category_orders={
+                    "Grupo_visual": [
+                        "Observação normal",
+                        "Outlier LOF",
+                        "Anomalia em investigação"
+                    ]
+                },
+                title=f"{variavel_y} × {variavel_x}",
+                labels={
+                    variavel_x: variavel_x,
+                    variavel_y: variavel_y,
+                    "Grupo_visual": "Tipo de observação"
+                },
+                template="plotly_dark"
+            )
+            fig.update_layout(
+                paper_bgcolor="#0B1F33",
+                plot_bgcolor="#153A5B",
+                font=dict(family="Arial", color="#FFFFFF", size=13),
+                title=dict(font=dict(size=20), x=0),
+                legend_title_text="Classificação",
+                margin=dict(l=20, r=20, t=60, b=20),
+                xaxis=dict(showgrid=True, gridcolor="#285477", zeroline=False),
+                yaxis=dict(showgrid=True, gridcolor="#285477", zeroline=False)
+            )
 
-    if comparacao is None:
-        st.warning("Não foi possível calcular a comparação. Verifique se a observação tem valores válidos nas variáveis meteorológicas.")
+            # A amostra em investigação já tem uma categoria e cor próprias no gráfico.
+            st.plotly_chart(fig, width="stretch")
 
-    else:
-        tabela = comparacao.copy()
-        numericas = ["Valor observado", "Média dos vizinhos", "Diferença", "Diferença padronizada"]
-        tabela[numericas] = tabela[numericas].round(2)
-        tabela["Magnitude do desvio"] = tabela["Diferença padronizada"].abs()
-        tabela = tabela.sort_values("Magnitude do desvio", ascending=False)
-
-        st.markdown("#### Variáveis com maiores desvios")
-        st.dataframe(tabela.drop(columns=["Magnitude do desvio"]), hide_index=True, width="stretch")
-
-        fig_desvios = px.bar(tabela, x="Diferença padronizada", y="Variável", orientation="h", color="Diferença padronizada", color_continuous_scale=["#78BDE8", "#FFF0A6", "#F2C94C"], title="Desvios em relação à média dos vizinhos", labels={"Diferença padronizada":"Diferença padronizada", "Variável":"Variável meteorológica"}, template="plotly_dark")
-        
-        fig_desvios.update_layout(paper_bgcolor="#0B1F33", plot_bgcolor="#153A5B", font=dict(color="#FFFFFF"), coloraxis_colorbar=dict(title="Desvio"), xaxis=dict(zeroline=True, zerolinecolor="#FFFFFF", gridcolor="#285477"), yaxis=dict(autorange="reversed", gridcolor="#285477"))
-        
-        st.plotly_chart(fig_desvios, width="stretch")
-        st.caption("Diferenças positivas indicam valores acima da média dos vizinhos; diferenças negativas indicam valores abaixo. A diferença padronizada divide o desvio pela variabilidade mensal da variável. Essas medidas são descritivas e não demonstram causalidade nem confirmam, isoladamente, um evento meteorológico extremo.")
-
-
-st.divider()
-st.subheader("Visualização das variáveis meteorológicas")
-
-
-cx, cy = st.columns(2)
-
-
-with cx:
-    indice_x = variaveis_disponiveis.index("Temperatura máxima") if "Temperatura máxima" in variaveis_disponiveis else 0
-    variavel_x = st.selectbox("Variável do eixo X", options=variaveis_disponiveis, index=indice_x)
-
-
-opcoes_y = [v for v in variaveis_disponiveis if v != variavel_x]
-
-
-with cy:
-    variavel_y = st.selectbox("Variável do eixo Y", options=opcoes_y, index=min(5, len(opcoes_y)-1))
-dados_grafico = dados_mes.dropna(subset=[variavel_x, variavel_y]).copy()
-
-
-if dados_grafico.empty:
-    st.warning("Não há registros suficientes para comparar essas variáveis no mês selecionado.")
-    st.stop()
-
-
-fig = px.scatter(dados_grafico, x=variavel_x, y=variavel_y, hover_data=["Data", "Score LOF"], color="Anomalia", color_discrete_map={False:"#78BDE8", True:"#F2C94C"}, title=f"{variavel_y} × {variavel_x}", labels={variavel_x:variavel_x, variavel_y:variavel_y, "Anomalia":"Classificada como anomalia"}, template="plotly_dark")
-fig.update_layout(paper_bgcolor="#0B1F33", plot_bgcolor="#153A5B", font=dict(family="Arial", color="#FFFFFF", size=13), title=dict(font=dict(size=20), x=0), legend_title_text="Classificação", margin=dict(l=20,r=20,t=60,b=20), xaxis=dict(showgrid=True,gridcolor="#285477",zeroline=False), yaxis=dict(showgrid=True,gridcolor="#285477",zeroline=False))
-
-
-if not dados_anomalia.empty:
-    ponto = dados_anomalia.iloc[0]
-
-    if variavel_x in ponto.index and variavel_y in ponto.index:
-        fig.add_scatter(x=[ponto[variavel_x]], y=[ponto[variavel_y]], mode="markers", name="Anomalia selecionada", marker=dict(color="#FFF0A6",size=14,symbol="x",line=dict(width=2)), hovertemplate=f"Anomalia selecionada<br>{variavel_x}: %{{x}}<br>{variavel_y}: %{{y}}<extra></extra>")
-
-
-st.plotly_chart(fig, width="stretch")
-st.caption("Nota metodológica: uma observação classificada como anômala pelo LOF apresenta um padrão estatisticamente incomum em relação aos vizinhos considerados pelo algoritmo. Isso não significa, por si só, que seja um erro de medição ou um evento meteorológico extremo.")
+        with st.expander("Nota metodológica", expanded=False):
+            st.caption(
+                "Uma observação classificada como anômala pelo LOF apresenta um padrão "
+                "estatisticamente incomum em relação aos vizinhos considerados pelo algoritmo. "
+                "Isso não significa, por si só, que seja um erro de medição ou um evento "
+                "meteorológico extremo."
+            )
+else:
+    st.info("Clique em uma linha da tabela para visualizar a análise detalhada da anomalia.")
